@@ -32,7 +32,7 @@ add_definitions(-DEIGEN_USE_OPENMP)
 file(GLOB CORE_SRC "src/core/*.cpp")
 file(GLOB CROSSBAR_SRC "src/crossbar_model/*.cpp")
 file(GLOB MEMRISTOR_SRC "src/memristor_model/*.cpp")
-file(GLOB TEST_SRC "tests/*.cpp")
+#file(GLOB TEST_SRC "tests/*.cpp")
 
 # Separate main file from core sources
 set(MAIN_SRC "src/core/xbar_simulator.cpp")
@@ -75,8 +75,7 @@ target_compile_options(xbar_simulator PRIVATE
     -O3 
     -march=native  
     -ffast-math 
-    -fopenmp 
-    
+    -fopenmp  
 )
 
 # Link against filesystem library if needed (for C++17 std::filesystem)

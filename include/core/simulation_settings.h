@@ -29,7 +29,7 @@ const float voltage_pulse_width = 50e-6;     // Total voltage pulse width, inclu
 const float voltage_pulse_height = 0.1;      // Maximum height of the voltage pulse
 const float voltage_pulse_rise_time = 5e-6;  // Time for the voltage pulse to go from 0 to the pulse height
 const float voltage_pulse_fall_time = 5e-6;  // Time for the voltage pulse to go from the pulse height to 0
-
+const int simulation_num_threads = 4;        // Number of threads to use for the simulation
 const float simulation_time_step = 1e-6;     // Delta time for each simulation step. Note: the memristor model can dynamically reduce this time step temporarilly if it detects large changes (see memristor_dynamic_time_step_N_limit)
 
 #endif  // SIMULATION_SETTINGS_H_

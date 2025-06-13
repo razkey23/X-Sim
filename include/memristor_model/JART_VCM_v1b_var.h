@@ -1,6 +1,6 @@
 #ifndef JART_VCM_v1b_var_H_
 #define JART_VCM_v1b_var_H_
-#include "memristor.h"
+#include "Memristor.h"
 #include <array>
 #include <vector>
 #include <iostream>

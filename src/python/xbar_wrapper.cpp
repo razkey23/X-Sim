@@ -55,6 +55,30 @@ py::array_t<T> vector2d_to_numpy(const std::vector<std::vector<T>>& vec) {
     return result;
 }
 
+
+// Helper function to convert numpy array to vector
+template <typename T>
+std::vector<T> numpy_to_vector1d(py::array_t<T> array) {
+    auto buf = array.request();
+    if (buf.ndim != 1) {
+        throw std::runtime_error("Input must be a 1D array");
+    }
+    T* ptr = static_cast<T*>(buf.ptr);
+    return std::vector<T>(ptr, ptr + buf.shape[0]);
+}
+
+// Helper function to convert vector to numpy array
+template <typename T>
+py::array_t<T> vector1d_to_numpy(const std::vector<T>& vec) {
+    std::vector<size_t> shape = {vec.size()};
+    py::array_t<T> result(shape);
+    auto buf = result.request();
+    T* ptr = static_cast<T*>(buf.ptr);
+    std::copy(vec.begin(), vec.end(), ptr);
+    return result;
+}
+
+
 // Helper function to convert numpy array to Eigen vector
 Eigen::VectorXf numpy_to_eigen_vector(py::array_t<float> array) {
     auto buf = array.request();
@@ -95,8 +119,15 @@ public:
         simulator.SetRRAM(weights_vec);
     }
 
-   
-    py::array_t<float> run_inference(py::array_t<float> input, float dt = simulation_time_step, std::string method = "fixed-point") {
+    void initialize_jart() {
+        simulator.Initialize<JART_VCM_v1b_var>();
+    }
+
+    void initialize_fefet() {
+        simulator.Initialize<FeFET>();
+    }
+
+    /*py::array_t<float> run_inference(py::array_t<float> input, float dt = simulation_time_step, std::string method = "fixed-point") {
         if (input.ndim() != 1) {
             throw std::runtime_error("Input must be a 1D array");
         }
@@ -131,6 +162,7 @@ public:
         }
         
         // Apply voltage and get output currents
+        
         auto currents = simulator.ApplyVoltage(Vguess, Vappwl1, Vappwl2, Vappbl1, Vappbl2, dt, method);
         
         // Calculate MAC outputs (sum of currents per column)
@@ -153,9 +185,58 @@ public:
         }
         
         return result;
+    } */
+   std::tuple<py::array_t<float>, py::array_t<float>>
+    run_inference(py::array_t<float> input,
+                float dt           = simulation_time_step,
+                std::string method = "fixed-point")
+    {
+        if (input.ndim() != 1)
+            throw std::runtime_error("Input must be a 1-D array");
+
+        /* ----------  prepare voltages & access transistors ---------- */
+        auto  buf = input.request();
+        auto* vin = static_cast<float*>(buf.ptr);
+
+        const size_t M = simulator.M;
+        const size_t N = simulator.N;
+
+        Eigen::VectorXf Vappwl1 = Eigen::VectorXf::Zero(M);
+        Eigen::VectorXf Vappwl2 = Eigen::VectorXf::Zero(M);
+        Eigen::VectorXf Vappbl1 = Eigen::VectorXf::Zero(N);
+        Eigen::VectorXf Vappbl2 = Eigen::VectorXf::Zero(N);
+
+        for (size_t m = 0; m < M; ++m) {
+            bool drive = (m < buf.shape[0] && vin[m] != 0.f);
+            simulator.access_transistors[m] = std::vector<bool>(N, drive);
+            if (drive) Vappwl1(m) = voltage_pulse_height;
+        }
+
+        /* ----------  initial guess & non-linear solve  -------------- */
+        Eigen::VectorXf Vguess = Eigen::VectorXf::Zero(2 * M * N);
+        for (size_t i = 0; i < M; ++i)
+            for (size_t j = 0; j < N; ++j)
+                Vguess(i * N + j) = Vappwl1(i);
+
+        auto Iout_vec2d = simulator.ApplyVoltage(Vguess,
+                                                Vappwl1, Vappwl2,
+                                                Vappbl1, Vappbl2,
+                                                dt, method);   // (M×N)
+
+        /* ----------  column MAC currents  --------------------------- */
+        std::vector<float> Iout_MAC(N, 0.f);
+        for (size_t n = 0; n < N; ++n)
+            for (size_t m = 0; m < M; ++m)
+                Iout_MAC[n] += Iout_vec2d[m][n];
+
+        /* ----------  convert to NumPy & return  --------------------- */
+        auto Iout_np     = vector2d_to_numpy<float>(Iout_vec2d);
+        auto IoutMAC_np  = vector1d_to_numpy<float>(Iout_MAC);
+
+        return std::make_tuple(Iout_np, IoutMAC_np);
     }
     
-    py::array_t<float> run_multiple_inferences(py::array_t<float> input, int num_inferences, float dt = simulation_time_step) {
+    /*py::array_t<float> run_multiple_inferences(py::array_t<float> input, int num_inferences, float dt = simulation_time_step) {
         if (input.ndim() != 1) {
             throw std::runtime_error("Input must be a 1D array");
         }
@@ -175,6 +256,31 @@ public:
         }
         
         return vector2d_to_numpy<float>(mac_outputs_all_iterations);
+    }*/
+   py::array_t<float>
+    run_multiple_inferences(py::array_t<float> input,
+                            int  num_inferences,
+                            float dt           = simulation_time_step,
+                            std::string method = "fixed-point")
+    {
+        if (input.ndim() != 1)
+            throw std::runtime_error("Input must be a 1-D array");
+
+        const size_t N = simulator.N;
+        std::vector<std::vector<float>> all_mac;   // one row per inference
+
+        for (int k = 0; k < num_inferences; ++k)
+        {
+            /* run_inference now returns (Icell, Imac) */
+            auto result   = this->run_inference(input, dt, method);
+            auto mac_np   = std::get<1>(result);          // 1-D (N,)
+            auto mac_buf  = mac_np.request();
+            auto* mac_ptr = static_cast<float*>(mac_buf.ptr);
+
+            all_mac.emplace_back(mac_ptr, mac_ptr + N);   // save this pass
+        }
+
+        return vector2d_to_numpy<float>(all_mac);         // shape (samples, N)
     }
     
     // Expose additional parameters and methods
@@ -194,6 +300,42 @@ public:
             simulator.Rwl, simulator.Rbl
         );
     }
+
+    std::tuple<py::array_t<float>, py::array_t<float>> transientInference(
+        py::array_t<bool> Vwl1, py::array_t<bool> Vwl2,
+        py::array_t<bool> Vbl1, py::array_t<bool> Vbl2,
+        py::array_t<bool> weights,
+        py::array_t<float> waveform,
+        float dt = simulation_time_step
+    ) {
+        // Convert numpy arrays to vectors
+        auto Vwl1_vec = numpy_to_vector1d<bool>(Vwl1);
+        auto Vwl2_vec = numpy_to_vector1d<bool>(Vwl2);
+        auto Vbl1_vec = numpy_to_vector1d<bool>(Vbl1);
+        auto Vbl2_vec = numpy_to_vector1d<bool>(Vbl2);
+        auto weights_vec = numpy_to_vector2d<bool>(weights);
+        
+        // Convert waveform to vector of arrays
+        auto waveform_buf = waveform.request();
+        if (waveform_buf.ndim != 2 || waveform_buf.shape[1] != 2) {
+            throw std::runtime_error("Waveform must be a 2D array with shape (n, 2)");
+        }
+        std::vector<std::array<float, 2>> waveform_vec;
+        float* ptr = static_cast<float*>(waveform_buf.ptr);
+        for (size_t i = 0; i < waveform_buf.shape[0]; i++) {
+            waveform_vec.push_back({ptr[i*2], ptr[i*2 + 1]});
+        }
+
+        // Prepare output containers
+        std::vector<std::vector<float>> Iout;
+        std::vector<float> Iout_MAC;
+
+        // Run simulation
+        simulator.Simulate(Vwl1_vec, Vwl2_vec, Vbl1_vec, Vbl2_vec, weights_vec, waveform_vec, dt, Iout, Iout_MAC);
+
+        // Convert outputs to numpy arrays
+        return std::make_tuple(vector2d_to_numpy<float>(Iout), vector1d_to_numpy<float>(Iout_MAC));
+    }
 };
 
 PYBIND11_MODULE(xbar_simulator, m) {
@@ -210,20 +352,29 @@ PYBIND11_MODULE(xbar_simulator, m) {
         .def(py::init<int, int>(), py::arg("M"), py::arg("N"))
         .def("set_weights", &PyXbarSimulator::set_weights, 
              "Set the weights of the crossbar (boolean matrix)")
+        .def("initialize_jart", &PyXbarSimulator::initialize_jart,
+             "Initialize the crossbar with JART memristors")
+        .def("initialize_fefet", &PyXbarSimulator::initialize_fefet,
+             "Initialize the crossbar with FeFET memristors")
         
         .def("run_inference", &PyXbarSimulator::run_inference, 
              py::arg("input"), py::arg("dt") = simulation_time_step, py::arg("method") = "fixed-point",
              "Run a single inference with the given input vector")
         .def("run_multiple_inferences", &PyXbarSimulator::run_multiple_inferences,
-             py::arg("input"), py::arg("num_inferences"), py::arg("dt") = simulation_time_step,
+             py::arg("input"), py::arg("num_inferences"), py::arg("dt") = simulation_time_step,  py::arg("method") = "fixed-point",
              "Run multiple inferences with the same input vector")
         .def("set_parasitic_resistances", &PyXbarSimulator::set_parasitic_resistances,
              py::arg("Rswl1"), py::arg("Rswl2"), py::arg("Rsbl1"), py::arg("Rsbl2"), 
              py::arg("Rwl"), py::arg("Rbl"),
-             "Set the parasitic resistances of the crossbar");
+             "Set the parasitic resistances of the crossbar")
+        .def("transientInference", &PyXbarSimulator::transientInference,
+             py::arg("Vwl1"), py::arg("Vwl2"), py::arg("Vbl1"), py::arg("Vbl2"),
+             py::arg("weights"), py::arg("waveform"), py::arg("dt") = simulation_time_step,
+             "Run a transient simulation with the given voltage waveforms");
     
     // Expose simulation settings
     m.attr("voltage_pulse_height") = voltage_pulse_height;
     m.attr("simulation_time_step") = simulation_time_step;
+    m.attr("simulation_num_threads") = simulation_num_threads;
     m.attr("methods") = py::make_tuple("fixed-point", "NewtonRaphson", "Broyden", "BroydenInv");
 } 

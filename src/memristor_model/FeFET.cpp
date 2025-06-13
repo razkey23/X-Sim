@@ -1,4 +1,4 @@
-#include "FeFET.h"
+#include "memristor_model/FeFET.h"
 
 /***********************  ctor & initialisation  ************************/ 
 FeFET::FeFET(std::size_t ndom, unsigned seed)
