@@ -71,7 +71,7 @@ def main() -> None:
 
             # ––– steady-state –––
             t0 = time.perf_counter()
-            mac_ss = np.asarray(sim.run_inference(inputs))      # (m,)
+            _, mac_ss = sim.run_inference(inputs)      # (m,)
             t_ss_list.append(time.perf_counter() - t0)
 
             # ––– transient –––
