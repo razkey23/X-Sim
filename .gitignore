@@ -16,3 +16,4 @@ build/*
 oracle/*
 tests/*
 python/xbar_simulator.egg-info/*
+*.so
