@@ -7,6 +7,13 @@ if [ ! -d "pybind11" ]; then
     git clone https://github.com/pybind/pybind11.git
 fi
 
+# Check if Eigen is present, if not clone it
+if [ ! -d "include/eigen" ]; then
+    echo "Cloning Eigen repository..."
+    mkdir -p include
+    git clone https://gitlab.com/libeigen/eigen.git include/eigen
+fi
+
 # Create build directory if it doesn't exist
 mkdir -p build
 
