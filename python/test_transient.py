@@ -16,7 +16,8 @@ import numpy as np
 import xbar_simulator
 
 # ──────────────────────────  constants  ──────────────────────────── #
-SIZES          = (32, 64, 128)
+SIZES          = (32, 64)
+# SIZES          = (32, 64, 128)
 SAMPLES        = 10
 PARASITICS     = (3, 1e20, 1e20, 5, 3, 2)           # same as C++ example
 VP_H, VP_W, VP_R, VP_F = 0.1, 50e-6, 5e-6, 5e-6     # read-pulse shape
