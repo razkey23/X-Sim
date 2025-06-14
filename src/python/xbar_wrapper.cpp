@@ -8,6 +8,11 @@
 
 namespace py = pybind11;
 
+constexpr float VP_H = 0.1f;       // Voltage pulse height
+constexpr float VP_W = 50e-6f;     // Pulse width
+constexpr float VP_R =  5e-6f;     // Rise time
+constexpr float VP_F =  5e-6f;     // Fall time
+
 // Helper function to convert numpy array to vector of vectors
 template <typename T>
 std::vector<std::vector<T>> numpy_to_vector2d(py::array_t<T> array) {
@@ -110,13 +115,14 @@ int get_eigen_threads() {
 class PyXbarSimulator {
 private:
     CrossbarSimulator simulator;
+    std::vector<std::vector<bool>> weights_vec_;
 
 public:
     PyXbarSimulator(int M, int N) : simulator(M, N) {}
     
     void set_weights(py::array_t<bool> weights) {
-        auto weights_vec = numpy_to_vector2d<bool>(weights);
-        simulator.SetRRAM(weights_vec);
+        weights_vec_ = numpy_to_vector2d<bool>(weights);
+        simulator.SetRRAM(weights_vec_);
     }
 
     void initialize_jart() {
@@ -127,65 +133,6 @@ public:
         simulator.Initialize<FeFET>();
     }
 
-    /*py::array_t<float> run_inference(py::array_t<float> input, float dt = simulation_time_step, std::string method = "fixed-point") {
-        if (input.ndim() != 1) {
-            throw std::runtime_error("Input must be a 1D array");
-        }
-        
-        auto buf = input.request();
-        float* ptr = static_cast<float*>(buf.ptr);
-        size_t M = simulator.M;
-        size_t N = simulator.N;
-        
-        // Set up input voltages
-        Eigen::VectorXf Vappwl1 = Eigen::VectorXf::Zero(M);
-        Eigen::VectorXf Vappwl2 = Eigen::VectorXf::Zero(M);
-        Eigen::VectorXf Vappbl1 = Eigen::VectorXf::Zero(N);
-        Eigen::VectorXf Vappbl2 = Eigen::VectorXf::Zero(N);
-        
-        // Set access transistors based on input
-        for (size_t j = 0; j < M; j++) {
-            if (j < buf.shape[0] && ptr[j] != 0) {
-                Vappwl1(j) = voltage_pulse_height;
-                simulator.access_transistors[j] = std::vector<bool>(N, true);
-            } else {
-                simulator.access_transistors[j] = std::vector<bool>(N, false);
-            }
-        }
-        
-        // Initial voltage guess
-        Eigen::VectorXf Vguess = Eigen::VectorXf::Zero(2*M*N);
-        for (size_t i = 0; i < M; i++) {
-            for (size_t j = 0; j < N; j++) {
-                Vguess(i*N + j) = Vappwl1(i);
-            }
-        }
-        
-        // Apply voltage and get output currents
-        
-        auto currents = simulator.ApplyVoltage(Vguess, Vappwl1, Vappwl2, Vappbl1, Vappbl2, dt, method);
-        
-        // Calculate MAC outputs (sum of currents per column)
-        std::vector<float> mac_outputs(N, 0.0f);
-        for (size_t n = 0; n < N; n++) {
-            for (size_t m = 0; m < M; m++) {
-                mac_outputs[n] += currents[m][n];
-            }
-        }
-
-       
-        // Convert to numpy array
-        std::vector<size_t> shape = {N};
-        py::array_t<float> result(shape);
-        auto result_buf = result.request();
-        float* result_ptr = static_cast<float*>(result_buf.ptr);
-        
-        for (size_t i = 0; i < N; i++) {
-            result_ptr[i] = mac_outputs[i];
-        }
-        
-        return result;
-    } */
    std::tuple<py::array_t<float>, py::array_t<float>>
     run_inference(py::array_t<float> input,
                 float dt           = simulation_time_step,
@@ -236,27 +183,6 @@ public:
         return std::make_tuple(Iout_np, IoutMAC_np);
     }
     
-    /*py::array_t<float> run_multiple_inferences(py::array_t<float> input, int num_inferences, float dt = simulation_time_step) {
-        if (input.ndim() != 1) {
-            throw std::runtime_error("Input must be a 1D array");
-        }
-        
-        size_t N = simulator.N;
-        std::vector<std::vector<float>> mac_outputs_all_iterations;
-        
-        for (int iteration = 0; iteration < num_inferences; iteration++) {
-            auto mac_outputs = run_inference(input, dt);
-            
-            // Convert 1D numpy array to vector
-            auto buf = mac_outputs.request();
-            float* ptr = static_cast<float*>(buf.ptr);
-            std::vector<float> mac_outputs_vec(ptr, ptr + N);
-            
-            mac_outputs_all_iterations.push_back(mac_outputs_vec);
-        }
-        
-        return vector2d_to_numpy<float>(mac_outputs_all_iterations);
-    }*/
    py::array_t<float>
     run_multiple_inferences(py::array_t<float> input,
                             int  num_inferences,
@@ -336,7 +262,73 @@ public:
         // Convert outputs to numpy arrays
         return std::make_tuple(vector2d_to_numpy<float>(Iout), vector1d_to_numpy<float>(Iout_MAC));
     }
+    // In your pybind11 binding class…
+
+    static const std::vector<std::array<float,2>> default_waveform;
+
+    std::tuple<py::array_t<float>,py::array_t<float>>
+    transientInference_mod(
+        py::array_t<float> input,
+        float dt           = simulation_time_step,
+        const std::string &method = "fixed-point"
+    ) {
+        // 1) Validate input
+        if (input.ndim() != 1)
+            throw std::runtime_error("Input must be a 1-D array");
+
+        // 2) Pull out the raw floats
+        auto buf = input.request();
+        auto* vin = static_cast<float*>(buf.ptr);
+
+        // 3) Build control‐line booleans
+        const size_t M = simulator.M;
+        const size_t N = simulator.N;
+        std::vector<bool> Vwl1(M), Vwl2(M,false), Vbl1(N,false), Vbl2(N,false);
+
+        for (size_t i = 0; i < M; ++i) {
+            bool drive = (i < buf.shape[0] && vin[i] != 0.f);
+            Vwl1[i] = drive;
+            // also set the access‐transistor mask inside the simulator
+            simulator.access_transistors[i].assign(N, drive);
+        }
+
+        // 4) Grab the weights you previously loaded via set_weights()
+        // const auto &weights_vec = weights_vec_;  // vector<vector<bool>>
+
+        // 5) Use your stored default_waveform
+        // const auto &waveform_vec = default_waveform;  // vector<array<float,2>>
+
+        // 6) Prepare outputs
+        std::vector<std::vector<float>> Iout;
+        std::vector<float>               IoutMAC;
+
+        // 7) Run the transient sim
+        simulator.Simulate(
+            Vwl1, Vwl2, Vbl1, Vbl2,
+            weights_vec_,
+            default_waveform,
+            dt,
+            Iout,
+            IoutMAC
+        );
+
+
+        // 8) Convert back to NumPy and return
+        return std::make_tuple(
+        vector2d_to_numpy<float>(Iout),
+        vector1d_to_numpy<float>(IoutMAC)
+        );
+}
+
 };
+
+const std::vector<std::array<float,2>> PyXbarSimulator::default_waveform = {
+    {0.0f,      0.0f},
+    {VP_H,      VP_R},
+    {VP_H,      VP_W - VP_F},
+    {0.0f,      VP_W}
+};
+
 
 PYBIND11_MODULE(xbar_simulator, m) {
     m.doc() = "Python bindings for the memristor crossbar simulator";
@@ -370,8 +362,11 @@ PYBIND11_MODULE(xbar_simulator, m) {
         .def("transientInference", &PyXbarSimulator::transientInference,
              py::arg("Vwl1"), py::arg("Vwl2"), py::arg("Vbl1"), py::arg("Vbl2"),
              py::arg("weights"), py::arg("waveform"), py::arg("dt") = simulation_time_step,
-             "Run a transient simulation with the given voltage waveforms");
-    
+             "Run a transient simulation with the given voltage waveforms")
+        .def("transientInference_mod", &PyXbarSimulator::transientInference_mod,
+             py::arg("input"),
+             py::arg("dt") = simulation_time_step,
+             py::arg("method") = "fixed-point");
     // Expose simulation settings
     m.attr("voltage_pulse_height") = voltage_pulse_height;
     m.attr("simulation_time_step") = simulation_time_step;
