@@ -2,12 +2,14 @@ import numpy as np
 from crossbar import ParallelSim  # assuming this is in same directory
 import time
 from tqdm import tqdm
-
+from typing import Dict, Any
+import os
+import pickle
 def parallel_tiled_forward(inputs: np.ndarray,
                            weights: np.ndarray,
                            M: int, N: int,
                            mode="cs", transient=False,
-                           max_workers: int = 4) -> np.ndarray:
+                           max_workers: int = 8) -> np.ndarray:
     """
     Dot product using fixed-size (M×N) ParallelSim tiles.
     Edge tiles are padded with zeros so every block is exactly M×N.
@@ -69,38 +71,92 @@ def parallel_tiled_forward(inputs: np.ndarray,
 
     return out[0] if single else out
 
-def test_correctness():
-    # L, C = 256, 256    # large matrix
-    L, C = 784, 512     # large matrix
-    B = 10              # batch size
-    M, N = 32,32      # tile size
-    P = 50
-    psim = ParallelSim(L, C, mode="gs", transient=False)
+def diff_stats(A: np.ndarray, B: np.ndarray) -> Dict[str, Any]:
+    """
+    Compare two same-shaped NumPy arrays element-wise.
+
+    Returns a dictionary with:
+      • row_abs_sum  : 1-D array of row-wise |A−B| sums
+      • row_diff_cnt : 1-D array of row-wise (# of elements where A≠B)
+      • total_abs_sum: scalar, sum of all |A−B|
+      • total_diff_cnt: scalar, total # of differing elements
+      • row_pct_diff : 1-D array, percentage of differing elements per row
+    """
+    if A.shape != B.shape:
+        raise ValueError("A and B must have the same shape")
+
+    abs_diff       = np.abs(A - B)
+    bool_diff      = abs_diff != 0
+
+    row_abs_sum    = abs_diff.sum(axis=1)
+    row_diff_cnt   = bool_diff.sum(axis=1)
+
+    total_abs_sum  = row_abs_sum.sum()
+    total_diff_cnt = row_diff_cnt.sum()
+
+    row_pct_diff   = row_diff_cnt / A.shape[1] * 100.0  # (%) per row
+
+    return dict(
+        row_abs_sum=row_abs_sum,
+        row_diff_cnt=row_diff_cnt,
+        total_abs_sum=total_abs_sum,
+        total_diff_cnt=total_diff_cnt,
+        row_pct_diff=row_pct_diff,
+    )
+
+def test_correctness(L,C,B,M,N,P,tran):
+    psim = ParallelSim(L, C, mode="gs", transient=tran)
 
     inputs = psim.random_inputs(B,P)
     weights = psim.random_weights(P)
 
-    print(inputs.shape)
-    print(weights.shape)
+    # print(inputs.shape)
+    # print(weights.shape)
     start = time.time()
-    print("Running parallel tiled simulation...")
-    out_cs = parallel_tiled_forward(inputs, weights, M, N, mode="cs", transient=False)
-    out_gs = parallel_tiled_forward(inputs, weights, M, N, mode="gs", transient=False)
-
-    print("Running reference matmul...")
+    print(f"Running parallel tiled simulation... for gs transient {tran}")
+    out_gs = parallel_tiled_forward(inputs, weights, M, N, mode="gs", transient=tran)
     print(f"time : {time.time() - start}")
+    start = time.time()
+    print(f"Running parallel tiled simulation... for cs transient {tran}")
+    out_cs = parallel_tiled_forward(inputs, weights, M, N, mode="cs", transient=tran)
+    print(f"time : {time.time() - start}")
+
     psim.set_weights(weights)
     ref = psim.mvm(inputs)
-    # ref = inputs.astype(int) @ weights.astype(int)
-    diff_gs = ref - out_gs
-    diff_cs = ref - out_cs
-    idx = np.where(diff_gs!=0)
-    print(idx, np.sum(np.abs(diff_gs)))
-    idx = np.where(diff_cs!=0)
-    print(idx, np.sum(np.abs(diff_cs)))
 
-    # print(ref-out)
-
+    # print("cs")
+    cs_stats = diff_stats(ref,out_cs)
+    # for k, v in cs_stats.items():
+    #     print(f"{k}: {v}")
+    
+    # print("gs")
+    gs_stats = diff_stats(ref,out_gs)
+    # for k, v in gs_stats.items():
+    #     print(f"{k}: {v}")
+    
+    overall = {"gs":gs_stats,"cs":cs_stats,"tran":tran}
+    return overall
 
 if __name__ == "__main__":
-    test_correctness()
+    iterations = 10
+    # L, C = 128, 64     # large matrix
+    L, C = 784, 512     # large matrix
+    B = 2              # batch size
+    M, N = 32,32      # tile size
+    P = 50
+
+    stats = []
+    save_path = os.path.join("/home/earapidis/Fast-Crossbar-Sim/python/data/test.pkl")
+
+    for i in range(iterations):
+        for tran in [False,True]:
+        # for tran in [True,False]:
+            overall = test_correctness(L,C,B,M,N,P,tran)
+            stats.append(overall)
+            # print(overall)
+    with open(save_path,"wb") as f:
+        pickle.dump(stats,f)
+    
+    with open(save_path,"rb") as f:
+        loaded_stats = pickle.load(f)
+        print(loaded_stats)
