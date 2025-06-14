@@ -23,3 +23,4 @@ python/column_divisors.pkl
 python/__pycache__/crossbar.cpython-312.pyc
 python/__pycache__/test.cpython-312.pyc
 python/test_crossbar.py
+include/eigen
