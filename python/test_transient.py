@@ -74,34 +74,35 @@ def main() -> None:
             t0 = time.perf_counter()
             _, mac_ss = sim.run_inference(inputs)      # (m,)
             t_ss_list.append(time.perf_counter() - t0)
-
+            _,mac = sim.transientInference_mod(inputs)
+            print(mac)
             # ––– transient –––
             Vwl1 = inputs.copy()            # rows driven with pulse
             Vwl2 = np.zeros(m, bool)
             Vbl1 = np.zeros(m, bool)
             Vbl2 = np.zeros(m, bool)
 
-            t0 = time.perf_counter()
-            _, mac_tr = sim.transientInference(Vwl1, Vwl2,
-                                               Vbl1, Vbl2,
-                                               weights, WAVEFORM)
-            mac_tr = np.asarray(mac_tr)
-            t_tr_list.append(time.perf_counter() - t0)
+        #     t0 = time.perf_counter()
+        #     _, mac_tr = sim.transientInference(Vwl1, Vwl2,
+        #                                        Vbl1, Vbl2,
+        #                                        weights, WAVEFORM)
+        #     mac_tr = np.asarray(mac_tr)
+        #     t_tr_list.append(time.perf_counter() - t0)
 
-            # ––– error metrics –––
-            abs_err  = np.abs(mac_ss - mac_tr)
-            mae      = abs_err.mean()
-            rel_mae  = (abs_err / np.maximum(np.abs(mac_tr), 1e-30)).mean()
+        #     # ––– error metrics –––
+        #     abs_err  = np.abs(mac_ss - mac_tr)
+        #     mae      = abs_err.mean()
+        #     rel_mae  = (abs_err / np.maximum(np.abs(mac_tr), 1e-30)).mean()
 
-            mae_list.append(mae)
-            rel_mae_list.append(rel_mae)
+        #     mae_list.append(mae)
+        #     rel_mae_list.append(rel_mae)
 
-        # aggregate per crossbar size
-        print(row.format(m,
-                         mean(mae_list),
-                         mean(rel_mae_list),
-                         mean(t_ss_list),
-                         mean(t_tr_list)))
+        # # aggregate per crossbar size
+        # print(row.format(m,
+        #                  mean(mae_list),
+        #                  mean(rel_mae_list),
+        #                  mean(t_ss_list),
+        #                  mean(t_tr_list)))
 
     print("\nDone – 10 samples per size compared.")
 
