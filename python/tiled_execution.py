@@ -72,7 +72,7 @@ def parallel_tiled_forward(inputs: np.ndarray,
 def test_correctness():
     # L, C = 256, 256    # large matrix
     L, C = 784, 512     # large matrix
-    B = 1              # batch size
+    B = 10              # batch size
     M, N = 32,32      # tile size
     P = 50
     psim = ParallelSim(L, C, mode="gs", transient=False)
