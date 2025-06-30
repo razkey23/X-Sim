@@ -142,19 +142,21 @@ class ParallelSim(Base):
 
 # ----------------------------- 3. benchmark -------------------------------- #
 if __name__ == "__main__":
-    M = N = 32
+    M = N = 128
     P = 50          # sparsity %
     B = 100          # batch size
     RUNS = 10
-    # vet = VectorSim(M,N)
-    # inputs = vet.random_inputs(1,P)
+    vet = VectorSim(M,N)
+    inputs = vet.random_inputs(1,P)
     # print(inputs)
-    # W = vet.random_weights(P)
+    W = vet.random_weights(P)
     # print(_task((0,inputs),W,M,N,"gs",True))
-    # vet.set_weights(W)
-    # a = vet.run_vector(inputs)
-    # print(a)
-
+    vet.set_weights(W)
+    start_time = time.time()
+    a = vet.run_vector(inputs)
+    print("time:", time.time() - start_time)
+    print(a)
+    exit()
     # psim = ParallelSim(M, N, mode="cs", transient=True)
     psim = ParallelSim(M, N, mode="cs", transient=False)
     t_all, err_all = [], []
