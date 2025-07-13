@@ -44,7 +44,8 @@ class VectorSim(xbar_simulator.CrossbarSimulator):
         return (mem,mac)                                     # A → µA
 
     def _digitise(self, mac: np.ndarray) -> np.ndarray:
-        digital = np.rint(mac / self.adc_steps).astype(int)
+        digital = np.floor((mac + 0.5*self.adc_steps)/self.adc_steps).astype(int)
+        # digital = np.rint(mac / self.adc_steps).astype(int)
         return digital
 
     # ----------------- public API --------------------------------------------
@@ -79,11 +80,20 @@ def _task(pair, weights, M, N, mode, transient):
     """Creates a new VectorSim inside each task."""
     idx, vec = pair
     sim = VectorSim(M, N, mode, transient)
+
     sim.set_weights(weights)
-    digital = sim.run_vector(vec)
-    # _, mac = sim._solve(vec),  # µA
-    # digital = sim._digitise(mac)
-    return idx, digital
+    if vec.ndim == 1:
+        digital = sim.run_vector(vec)
+        # _, mac = sim._solve(vec),  # µA
+        # digital = sim._digitise(mac)
+        return idx, digital
+    else:
+        _N_, M = vec.shape
+        digital = np.empty((_N_,N))
+        for id,_vec_ in enumerate(vec):
+            _digital_ = sim.run_vector(_vec_)
+            digital[id] = _digital_
+        return idx, digital
 
 class Base():
     def __init__(self,M,N):
@@ -142,15 +152,16 @@ class ParallelSim(Base):
 
 # ----------------------------- 3. benchmark -------------------------------- #
 if __name__ == "__main__":
-    M = N = 128
+    M = N = 32
     P = 50          # sparsity %
     B = 100          # batch size
     RUNS = 10
     vet = VectorSim(M,N)
-    inputs = vet.random_inputs(1,P)
+    inputs = vet.random_inputs(RUNS,P)
     # print(inputs)
     W = vet.random_weights(P)
-    # print(_task((0,inputs),W,M,N,"gs",True))
+    print(_task((0,inputs),W,M,N,"gs",True))
+    exit()
     vet.set_weights(W)
     start_time = time.time()
     a = vet.run_vector(inputs)
