@@ -11,9 +11,19 @@ from tqdm import tqdm
 import xbar_simulator                                          # C++ bindings
 
 # ----------------------------- constants ---------------------------------- #
-PARASITICS = (1, 1e20, 1e20, 1, 1, 1)         # Rs, Rw, Rb, Cw, Cb, Cs
-ADC_STEPS  = pickle.load(open(
-    "/home/earapidis/Fast-Crossbar-Sim/python/column_divisors.pkl", "rb"))
+# Rw=0.00001
+# ideal_PARASITICS = (Rw, 1e20, 1e20, Rw, Rw, Rw)         # Rs, Rw, Rb, Cw, Cb, Cs
+# Rw=1
+# ir_PARASITICS = (Rw, 1e20, 1e20, Rw, Rw, Rw)         # Rs, Rw, Rb, Cw, Cb, Cs
+# ir_Para
+
+# column_divisor_path = os.path.abspath("/home/earapidis/Fast-Crossbar-Sim/python/column_divisors.pkl")
+column_divisor_path = os.path.abspath("/shares/bulk/earapidis/mac_optimization_divisors/monte_carlo/column_divisors.pkl")
+ADC_STEPS  = pickle.load(open(column_divisor_path , "rb"))
+
+ideal_current = 61.057
+ideal_steps = np.full_like(ADC_STEPS["gs"],ideal_current)
+ADC_STEPS["ideal"] = ideal_steps
 
 # ----------------------------- 1. base class ------------------------------ #
 class VectorSim(xbar_simulator.CrossbarSimulator):
@@ -24,7 +34,13 @@ class VectorSim(xbar_simulator.CrossbarSimulator):
         super().__init__(M, N)
         self.M, self.N, self.mode, self.transient = M, N, mode, transient
         self.initialize_jart()
-        self.set_parasitic_resistances(*PARASITICS)
+        if mode=="ideal":
+            Rw = 0.00001
+        else:
+            Rw = 1
+        parasitics = (Rw, 1e20, 1e20, Rw, Rw, Rw)
+            
+        self.set_parasitic_resistances(*parasitics)
         self.adc_steps = ADC_STEPS[self.mode]
         self.weights: np.ndarray | None = None             # set later
 
@@ -154,35 +170,49 @@ class ParallelSim(Base):
 if __name__ == "__main__":
     M = N = 32
     P = 50          # sparsity %
-    B = 100          # batch size
+    B = 10          # batch size
     RUNS = 10
-    vet = VectorSim(M,N)
-    inputs = vet.random_inputs(RUNS,P)
-    # print(inputs)
-    W = vet.random_weights(P)
-    print(_task((0,inputs),W,M,N,"gs",True))
-    exit()
-    vet.set_weights(W)
-    start_time = time.time()
-    a = vet.run_vector(inputs)
-    print("time:", time.time() - start_time)
-    print(a)
-    exit()
-    # psim = ParallelSim(M, N, mode="cs", transient=True)
-    psim = ParallelSim(M, N, mode="cs", transient=False)
-    t_all, err_all = [], []
 
-    for _ in tqdm(range(RUNS), desc="bench"):
-        X = psim.random_inputs(B, P)
-        W = psim.random_weights(P)
-        psim.set_weights(W)
+    sim = VectorSim(M,N)
+    inputs = sim.random_inputs(RUNS,P)
+    W = sim.random_weights(P)
+    sim.set_weights(W)
+    mvm = sim.mvm(inputs)
+    _ , cim_mvm_cs = _task((0,inputs),W,M,N,"cs",True)
+    _ , cim_mvm_gs = _task((0,inputs),W,M,N,"gs",True)
+    _ , cim_mvm_ideal = _task((0,inputs),W,M,N,"ideal",True)
 
-        t0 = time.perf_counter()
-        digital = psim.run(X)                   # parallel path
-        t_all.append(time.perf_counter() - t0)
+    print(f"cs : ")
+    print(f"equal : {np.array_equal(mvm,cim_mvm_cs)}")
+    print(mvm-cim_mvm_cs)
+    print(f"gs : ")
+    print(f"equal : {np.array_equal(mvm,cim_mvm_gs)}")
+    print(mvm-cim_mvm_gs)
+    print(f"ideal : ")
+    print(f"equal : {np.array_equal(mvm,cim_mvm_ideal)}")
+    print(mvm-cim_mvm_ideal)
+    # exit()
+    # vet.set_weights(W)
+    # start_time = time.time()
+    # a = vet.run_vector(inputs)
+    # print("time:", time.time() - start_time)
+    # print(a)
+    # exit()
+    # # psim = ParallelSim(M, N, mode="cs", transient=True)
+    # psim = ParallelSim(M, N, mode="cs", transient=False)
+    # t_all, err_all = [], []
 
-        diff = psim.mvm(X) - digital
-        err_all.append(np.mean(np.abs(diff)))
+    # for _ in tqdm(range(RUNS), desc="bench"):
+    #     X = psim.random_inputs(B, P)
+    #     W = psim.random_weights(P)
+    #     psim.set_weights(W)
 
-    print("time  avg/min/max (s):", mean(t_all), min(t_all), max(t_all))
-    print("MAE   avg/min/max   :", mean(err_all), min(err_all), max(err_all))
+    #     t0 = time.perf_counter()
+    #     digital = psim.run(X)                   # parallel path
+    #     t_all.append(time.perf_counter() - t0)
+
+    #     diff = psim.mvm(X) - digital
+    #     err_all.append(np.mean(np.abs(diff)))
+
+    # print("time  avg/min/max (s):", mean(t_all), min(t_all), max(t_all))
+    # print("MAE   avg/min/max   :", mean(err_all), min(err_all), max(err_all))
