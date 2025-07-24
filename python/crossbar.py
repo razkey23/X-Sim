@@ -5,7 +5,7 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Tuple, List
 from statistics import mean
-
+import dill
 import numpy as np
 from tqdm import tqdm
 import xbar_simulator                                          # C++ bindings
@@ -18,19 +18,20 @@ import xbar_simulator                                          # C++ bindings
 # ir_Para
 
 # column_divisor_path = os.path.abspath("/home/earapidis/Fast-Crossbar-Sim/python/column_divisors.pkl")
-column_divisor_path = os.path.abspath("/shares/bulk/earapidis/mac_optimization_divisors/monte_carlo/column_divisors.pkl")
-ADC_STEPS  = pickle.load(open(column_divisor_path , "rb"))
+# column_divisor_path = os.path.abspath("/shares/bulk/earapidis/mac_optimization_divisors/monte_carlo/column_divisors.pkl")
+# ADC_STEPS  = pickle.load(open(column_divisor_path , "rb"))
 
-ideal_current = 61.057
-ideal_steps = np.full_like(ADC_STEPS["gs"],ideal_current)
-ADC_STEPS["ideal"] = ideal_steps
+# ideal_current = 61.057
+# ideal_steps = np.full_like(ADC_STEPS["gs"],ideal_current)
+# ADC_STEPS["ideal"] = ideal_steps
+# ADC_STEPS["no-comp"] = ideal_steps
 
 # ----------------------------- 1. base class ------------------------------ #
 class VectorSim(xbar_simulator.CrossbarSimulator):
     """
     A *single-vector* simulator.  One instance lives in one process.
     """
-    def __init__(self, M: int, N: int, mode: str = "gs", transient=False):
+    def __init__(self, M: int, N: int,adc_steps_path:str, mode: str = "mapping_False-gs", transient=False):
         super().__init__(M, N)
         self.M, self.N, self.mode, self.transient = M, N, mode, transient
         self.initialize_jart()
@@ -41,8 +42,11 @@ class VectorSim(xbar_simulator.CrossbarSimulator):
         parasitics = (Rw, 1e20, 1e20, Rw, Rw, Rw)
             
         self.set_parasitic_resistances(*parasitics)
-        self.adc_steps = ADC_STEPS[self.mode]
+        if adc_steps_path!="":
+            adc_steps  = dill.load(open(adc_steps_path , "rb"))
+            self.adc_steps = adc_steps[self.mode]
         self.weights: np.ndarray | None = None             # set later
+        
 
     # ----------------- helpers ------------------------------------------------
     def set_weights(self, w: np.ndarray) -> None:
@@ -92,10 +96,10 @@ class VectorSim(xbar_simulator.CrossbarSimulator):
 
 # ----------------------------- 2. parallel wrapper ------------------------ #
 # globals for worker processes
-def _task(pair, weights, M, N, mode, transient):
+def _task(pair, weights, M, N,adc_steps_path, mode, transient):
     """Creates a new VectorSim inside each task."""
     idx, vec = pair
-    sim = VectorSim(M, N, mode, transient)
+    sim = VectorSim(M, N,adc_steps_path, mode, transient)
 
     sim.set_weights(weights)
     if vec.ndim == 1:
@@ -110,6 +114,33 @@ def _task(pair, weights, M, N, mode, transient):
             _digital_ = sim.run_vector(_vec_)
             digital[id] = _digital_
         return idx, digital
+
+def _collect_currents_(idx,x_per,w_per,M,N,num_runs,transient):
+    adc_steps_path = ""
+    mode = "mapping_False-gs"
+    sim = VectorSim(M, N,adc_steps_path, mode=mode, transient=transient)
+    x = sim.random_inputs(num_runs,x_per)
+    w = sim.random_weights(w_per)
+
+    sim.set_weights(w)
+    collected_mac = []
+    mvm = sim.mvm(x)
+
+    if x.ndim == 1:
+        _, mac = sim._solve(x)
+        collected_mac.append(mac)
+    else:
+        _N_, M = x.shape
+        for id,_vec_ in enumerate(x):
+            _, mac = sim._solve(_vec_)
+            collected_mac.append(mac)
+    collected_mac = np.array(collected_mac)
+    collected_mac = collected_mac.squeeze()
+    # print(collected_mac.shape)
+    # print(mvm.shape)
+    output = np.stack((collected_mac,mvm))
+    return idx, output
+
 
 class Base():
     def __init__(self,M,N):
@@ -171,48 +202,24 @@ if __name__ == "__main__":
     M = N = 32
     P = 50          # sparsity %
     B = 10          # batch size
-    RUNS = 10
+    RUNS = 1
 
-    sim = VectorSim(M,N)
-    inputs = sim.random_inputs(RUNS,P)
-    W = sim.random_weights(P)
-    sim.set_weights(W)
-    mvm = sim.mvm(inputs)
-    _ , cim_mvm_cs = _task((0,inputs),W,M,N,"cs",True)
-    _ , cim_mvm_gs = _task((0,inputs),W,M,N,"gs",True)
-    _ , cim_mvm_ideal = _task((0,inputs),W,M,N,"ideal",True)
+    # print(_collect_currents_(0,P,P,M,N,RUNS,transient=False))
 
-    print(f"cs : ")
-    print(f"equal : {np.array_equal(mvm,cim_mvm_cs)}")
-    print(mvm-cim_mvm_cs)
-    print(f"gs : ")
-    print(f"equal : {np.array_equal(mvm,cim_mvm_gs)}")
-    print(mvm-cim_mvm_gs)
-    print(f"ideal : ")
-    print(f"equal : {np.array_equal(mvm,cim_mvm_ideal)}")
-    print(mvm-cim_mvm_ideal)
-    # exit()
-    # vet.set_weights(W)
-    # start_time = time.time()
-    # a = vet.run_vector(inputs)
-    # print("time:", time.time() - start_time)
-    # print(a)
-    # exit()
-    # # psim = ParallelSim(M, N, mode="cs", transient=True)
-    # psim = ParallelSim(M, N, mode="cs", transient=False)
-    # t_all, err_all = [], []
+    mappings = [True,False]
+    modes = ["gs","cs"]
+    
+    sim = VectorSim(M,N,"","ideal",False)
+    x = sim.random_inputs(RUNS,P)
+    w = sim.random_weights(P)
+    sim.set_weights(w)
+    mvm = sim.mvm(x)
 
-    # for _ in tqdm(range(RUNS), desc="bench"):
-    #     X = psim.random_inputs(B, P)
-    #     W = psim.random_weights(P)
-    #     psim.set_weights(W)
-
-    #     t0 = time.perf_counter()
-    #     digital = psim.run(X)                   # parallel path
-    #     t_all.append(time.perf_counter() - t0)
-
-    #     diff = psim.mvm(X) - digital
-    #     err_all.append(np.mean(np.abs(diff)))
-
-    # print("time  avg/min/max (s):", mean(t_all), min(t_all), max(t_all))
-    # print("MAE   avg/min/max   :", mean(err_all), min(err_all), max(err_all))
+    adc_steps_path = os.path.abspath("/shares/bulk/earapidis/dev/BinarizedNN/saved_models/lenet_5/model_1/adc_steps.pkl")
+    for mapping in mappings:
+        for mode in modes:
+            _mode_ = f"mapping_{mapping}-{mode}"
+            idx, digital = _task((0,x),w,M,N,adc_steps_path,mode=_mode_,transient=False)
+            print(_mode_)
+            correct = np.sum(digital==mvm)
+            print(f"\tcorrect: {correct}/{N}")
