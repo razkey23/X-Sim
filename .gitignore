@@ -27,3 +27,5 @@ include/eigen
 python/data
 include/eigen
 include/eigen
+include/eigen/
+pybind11/
