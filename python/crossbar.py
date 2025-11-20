@@ -8,7 +8,8 @@ from statistics import mean
 import dill
 import numpy as np
 from tqdm import tqdm
-import xbar_simulator                                          # C++ bindings
+from . import xbar_simulator                                          # C++ bindings
+# import xbar_simulator                                          # C++ bindings
 
 # ----------------------------- constants ---------------------------------- #
 # Rw=0.00001
@@ -215,7 +216,7 @@ if __name__ == "__main__":
     sim.set_weights(w)
     mvm = sim.mvm(x)
 
-    adc_steps_path = os.path.abspath("/shares/bulk/earapidis/dev/BinarizedNN/saved_models/lenet_5/model_1/adc_steps.pkl")
+    adc_steps_path = os.path.abspath("/shares/bulk/earapidis/dev/simulations_data/saved_models/lenet_5/model_1/adc_steps.pkl")
     for mapping in mappings:
         for mode in modes:
             _mode_ = f"mapping_{mapping}-{mode}"
