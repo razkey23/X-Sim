@@ -32,3 +32,4 @@ pybind11/
 python/__pycache__/__init__.cpython-39.pyc
 python/__pycache__/crossbar.cpython-39.pyc
 __pycache__/__init__.cpython-39.pyc
+python/__pycache__/simple_sim.cpython-39.pyc

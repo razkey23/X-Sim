@@ -1,6 +1,6 @@
 from . import xbar_simulator                                          # C++ bindings
 import numpy as np
-
+import random
 class Simple_Sim(xbar_simulator.CrossbarSimulator):
     """
     A *single-vector* simulator.  One instance lives in one process.
@@ -58,11 +58,22 @@ class Simple_Sim(xbar_simulator.CrossbarSimulator):
             mac = mac[0]
         return mem, mac
     
-    def random_inputs(self, p: float,samples: int=1, seed=None) -> np.ndarray:
+    def sample_without_replacement(self,n,r,k,seed=None):
         rng   = np.random.default_rng(seed)
-        k     = int(round((p if p<=1 else p/100) * self.M))
+        possible_set = set()
+        while len(possible_set) < k:
+            combo = tuple(sorted(rng.sample(range(0, n), r)))
+            possible_set.add(combo)
+
+        possible_array = np.array(list(possible_set))
+        return possible_array
+    
+    def random_inputs(self, p: float,samples: int=1, seed=None) -> np.ndarray:
+        r     = int(round((p if p<=1 else p/100) * self.M))
         rows  = np.zeros((samples, self.M), dtype=bool)
-        for r in rows: r[rng.choice(self.M, k, replace=False)] = True
+        active_rows = self.sample_without_replacement(self.M,r,samples,seed)
+        for i in range(samples):
+            rows[i,active_rows[i]] = True
         if samples==1:
             rows = np.ravel(rows)
         return rows
