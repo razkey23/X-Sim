@@ -609,6 +609,7 @@ void JART_VCM_v1b_var::SetWeight(int weight) {
             switch(weight){
                 case 0:
                 Nreal = Ninit_HRS;
+                break;
                 case 1:
                 Nreal = Ninit_LRS3;
                 break;
@@ -631,7 +632,7 @@ void JART_VCM_v1b_var::SetWeight(int weight) {
             }
             break;
     }
-
+    // std::cout << "Set Nreal to " << Nreal << " for weight " << weight << std::endl;
     // if (weight) { Nreal = Ndiscmax; }
     // else { Nreal = Ndiscmin; }
     // else { Nreal = Ninit; }

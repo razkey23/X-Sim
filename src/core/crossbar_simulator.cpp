@@ -35,6 +35,7 @@ void CrossbarSimulator::SetRRAM(std::vector<std::vector<int>> weights) {
 
     for (int i = 0; i < weights.size(); i++) {
         for (int j = 0; j < weights[0].size(); j++) {
+            // std::cout << "Setting weight at (" << i << "," << j << ") to " << weights[i][j] << std::endl;
             RRAM[i][j]->SetWeight(weights[i][j]);
         }
     }
