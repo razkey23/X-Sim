@@ -29,7 +29,7 @@ void CrossbarSimulator::SetAccessTransistors(std::vector<bool> gate_lines) {
     }
 }
 
-void CrossbarSimulator::SetRRAM(std::vector<std::vector<bool>> weights) {
+void CrossbarSimulator::SetRRAM(std::vector<std::vector<int>> weights) {
     assert(weights.size() == RRAM.size());
     assert(weights[0].size() == RRAM[0].size());
 
@@ -124,7 +124,7 @@ std::vector<float> CrossbarSimulator::CalculateIout(Eigen::VectorXf Vout) {
 void CrossbarSimulator::Simulate(
         const std::vector<bool> Vwl1, const std::vector<bool> Vwl2,  // Applied voltages to the wordlines of the crossbar
         const std::vector<bool> Vbl1, const std::vector<bool> Vbl2,  // Applied voltages to the bitlines of the crossbar
-        const std::vector<std::vector<bool>> weights,  // matrix of weights corresponding to each crossbar. Writing weights is not simulated, instead the SetRRAM() function is used
+        const std::vector<std::vector<int>> weights,  // matrix of weights corresponding to each crossbar. Writing weights is not simulated, instead the SetRRAM() function is used
         const std::vector<std::array<float, 2>> waveform,  // Description of the waveform. Each element is a breakpoint consisting of a timestamp and a voltage. The wave is constructed by linearly interpolating between two breakpoints
         const float dt,  // Time step size used for simulation
         std::vector<std::vector<float>>& Iout,  // Output matrix for currents running through individual memristors. Will be cleared before use

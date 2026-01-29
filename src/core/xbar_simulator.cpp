@@ -92,7 +92,7 @@ int main(int argc, char* argv[]) {
         CrossbarSimulator crossbar(M, N);
 
         // Convert weights to boolean matrix for crossbar
-        std::vector<std::vector<bool>> weights(M, std::vector<bool>(N));
+        std::vector<std::vector<int>> weights(M, std::vector<int>(N));
         for (int i = 0; i < M; i++) {
             for (int j = 0; j < N; j++) {
                 weights[i][j] = (weight_data[i][j] != 0);

@@ -80,7 +80,7 @@ double FeFET::GetResistance(double V_applied)
     return V_applied / Id;
 }
 
-void FeFET::SetWeight(bool high)
+void FeFET::SetWeight(int high)
 {
     for (auto &s : St_) s = high ? +1.0 : -1.0;
     std::fill(h_.begin(),     h_.end(),     0.0);
