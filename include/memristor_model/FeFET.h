@@ -44,7 +44,7 @@ public:
      * Hard‑set the stored polarisation to logic ‘1’ (true) or ‘0’ (false).
      * Used by the simulator to preload weights instantly.
      */
-    void SetWeight(bool weight) override;
+    void SetWeight(int weight) override;
 
 private:
      /* ===================== physical constants ===================== */

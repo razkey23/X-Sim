@@ -115,13 +115,13 @@ int get_eigen_threads() {
 class PyXbarSimulator {
 private:
     CrossbarSimulator simulator;
-    std::vector<std::vector<bool>> weights_vec_;
+    std::vector<std::vector<int>> weights_vec_;
 
 public:
-    PyXbarSimulator(int M, int N) : simulator(M, N) {}
+    PyXbarSimulator(int M, int N, int bits_per_cell) : simulator(M, N, bits_per_cell) {}
     
-    void set_weights(py::array_t<bool> weights) {
-        weights_vec_ = numpy_to_vector2d<bool>(weights);
+    void set_weights(py::array_t<int> weights) {
+        weights_vec_ = numpy_to_vector2d<int>(weights);
         simulator.SetRRAM(weights_vec_);
     }
 
@@ -230,7 +230,7 @@ public:
     std::tuple<py::array_t<float>, py::array_t<float>> transientInference(
         py::array_t<bool> Vwl1, py::array_t<bool> Vwl2,
         py::array_t<bool> Vbl1, py::array_t<bool> Vbl2,
-        py::array_t<bool> weights,
+        py::array_t<int> weights,
         py::array_t<float> waveform,
         float dt = simulation_time_step
     ) {
@@ -239,7 +239,7 @@ public:
         auto Vwl2_vec = numpy_to_vector1d<bool>(Vwl2);
         auto Vbl1_vec = numpy_to_vector1d<bool>(Vbl1);
         auto Vbl2_vec = numpy_to_vector1d<bool>(Vbl2);
-        auto weights_vec = numpy_to_vector2d<bool>(weights);
+        auto weights_vec = numpy_to_vector2d<int>(weights);
         
         // Convert waveform to vector of arrays
         auto waveform_buf = waveform.request();
@@ -341,7 +341,7 @@ PYBIND11_MODULE(xbar_simulator, m) {
           "Get the current number of threads for Eigen computations");
     
     py::class_<PyXbarSimulator>(m, "CrossbarSimulator")
-        .def(py::init<int, int>(), py::arg("M"), py::arg("N"))
+        .def(py::init<int, int, int>(), py::arg("M"), py::arg("N"), py::arg("bits_per_cell")=1)
         .def("set_weights", &PyXbarSimulator::set_weights, 
              "Set the weights of the crossbar (boolean matrix)")
         .def("initialize_jart", &PyXbarSimulator::initialize_jart,

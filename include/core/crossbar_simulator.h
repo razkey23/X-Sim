@@ -15,7 +15,7 @@ class CrossbarSimulator {
     public:
     int M;
     int N;
-
+    int bits_per_cell;
     // std::vector<std::vector<JART_VCM_v1b_var>> RRAM;
     std::vector<std::vector<std::unique_ptr<Memristor>>> RRAM;
     std::vector<std::vector<bool>> access_transistors;
@@ -33,10 +33,10 @@ class CrossbarSimulator {
     Eigen::ConjugateGradient<Eigen::SparseMatrix<float>> linear_solver;
     ThreadPool pool;
     
-    CrossbarSimulator(int M, int N) : linear_solver(), pool(simulation_num_threads) {
+    CrossbarSimulator(int M, int N, int bits_per_cell_=1) : linear_solver(), pool(simulation_num_threads) {
         this->M = M;
         this->N = N;
-        
+        this->bits_per_cell = bits_per_cell_;
 
         // Initialize RRAM
         // RRAM = std::vector<std::vector<JART_VCM_v1b_var>>(M, std::vector<JART_VCM_v1b_var>(N, JART_VCM_v1b_var()));
@@ -63,13 +63,13 @@ class CrossbarSimulator {
     void Initialize() {
         for (int i = 0; i < M; ++i) {
             for (int j = 0; j < N; ++j) {
-                RRAM[i][j] = std::make_unique<MemristorType>();
+                RRAM[i][j] = std::make_unique<MemristorType>(this->bits_per_cell);
             }
         }
     }
 
     void SetAccessTransistors(std::vector<bool> gate_lines);
-    void SetRRAM(std::vector<std::vector<bool>> weights);
+    void SetRRAM(std::vector<std::vector<int>> weights);
 
     Eigen::VectorXf NonlinearSolve(
         Eigen::VectorXf Vguess,
@@ -88,7 +88,7 @@ class CrossbarSimulator {
     void Simulate(
         const std::vector<bool> Vwl1, const std::vector<bool> Vwl2,
         const std::vector<bool> Vbl1, const std::vector<bool> Vbl2,
-        const std::vector<std::vector<bool>> weights,
+        const std::vector<std::vector<int>> weights,
         const std::vector<std::array<float, 2>> waveform,
         const float dt,
         std::vector<std::vector<float>>& Iout,

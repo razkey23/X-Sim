@@ -5,7 +5,6 @@
 #include <vector>
 #include <iostream>
 
-
 #ifndef M_PI
 #define M_PI 3.1415927  // Define M_PI if not defined
 #endif
@@ -75,6 +74,15 @@ class JART_VCM_v1b_var : public Memristor {
 
         double tmp;
 
+        // ################ Ninit variables for MLC ##################
+        int bits_per_cell = 1;
+        double Ninit_LRS3    =  7.1327; 
+        double Ninit_LRS2    =  0.5430;
+        double Ninit_LRS1    =  0.1443;
+        // double Ninit_LRS2    =  0.5991;
+        // double Ninit_LRS1    =  0.1592;
+        double Ninit_HRS     =  0.0002;
+
         void UpdateFilamentArea();
         void UpdateTemperature(double V_schottky, double V_discplugserial, double I_schottky);
         double ComputeSchottkyCurrent(double V_schottky);
@@ -87,7 +95,10 @@ class JART_VCM_v1b_var : public Memristor {
         std::array<double, 3> SolveBrent(double V_a, double V_b, double V_applied);
 
     // public:
-        JART_VCM_v1b_var() {
+        JART_VCM_v1b_var(int bits_per_cell_ = 1) {
+
+            bits_per_cell = bits_per_cell_;
+
             Nreal = Ninit;
             Ninitreal = Ninit;
             trig = 1;
@@ -106,9 +117,11 @@ class JART_VCM_v1b_var : public Memristor {
 
             tmp = 0;
         }
+
+
         double ApplyVoltage(double V_applied, double dt) override;
         double GetResistance(double V_applied) override;
-        void SetWeight(bool weight) override;
+        void SetWeight(int weight) override;
 };
 
 #endif  // JART_VCM_v1b_var_H_
