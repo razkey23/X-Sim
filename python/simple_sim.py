@@ -1,12 +1,91 @@
-from . import xbar_simulator                                          # C++ bindings
+import xbar_simulator                                          # C++ bindings
+# from . import xbar_simulator                                          # C++ bindings
 import numpy as np
 import random
+import math
+def sample_without_replacement(n: int, r: int, k: int, seed=None) -> np.ndarray:
+    if r > n:
+        raise ValueError(f"r={r} cannot be larger than n={n}.")
+
+    max_k = math.comb(n, r)
+    rng = np.random.default_rng(seed)
+
+    # If k is larger than max_k, we can:
+    #  - generate all unique combinations (max_k rows)
+    #  - then sample with replacement from them to get exactly k rows
+    if k >= max_k:
+        # all unique combinations as (max_k, r)
+        combos = np.fromiter(
+            (i for comb in itertools.combinations(range(n), r) for i in comb),
+            dtype=int,
+            count=max_k * r,
+        ).reshape(max_k, r)
+
+        if k == max_k:
+            return combos
+
+        # sample k rows with replacement from all unique combos
+        idx = rng.integers(0, max_k, size=k)
+        return combos[idx]
+
+    # k < max_k: we want k unique combinations, sampled randomly
+    possible_set: set[tuple[int, ...]] = set()
+
+    while len(possible_set) < k:
+        remaining = k - len(possible_set)
+        batch_size = min(remaining * 3, 2000)  # smallish so Python loop is OK
+
+        # Sample each row independently, without replacement within the row
+        batch = [
+            tuple(sorted(rng.choice(n, size=r, replace=False)))
+            for _ in range(batch_size)
+        ]
+
+        for combo in batch:
+            possible_set.add(combo)
+            if len(possible_set) == k:
+                break
+
+    return np.array(list(possible_set), dtype=int)
+
+def random_inputs(M:int, p: float,k: int=1, seed=None) -> np.ndarray:
+    r     = int(round((p if p<=1 else p/100) * M))
+    rows  = np.zeros((k, M), dtype=bool)
+    active_rows = sample_without_replacement(M,r,k,seed)
+    for i in range(k):
+        rows[i,active_rows[i]] = True
+    if k==1:
+        rows = np.squeeze(rows)
+    return rows
+
+def random_weights(M:int,N:int, bits_per_cell: int, p: float,k: int=1, seed=None) -> np.ndarray:
+    r = int(round((p if p<=1 else p/100) * M * N))
+    flat_weights = np.zeros((k,M * N), dtype=int)
+    active_cells = sample_without_replacement(M*N,r,k,seed)
+    
+    for i in range(k):
+        for pos in active_cells[i]:
+            cell_val = random.randint(1,2**bits_per_cell-1)
+            flat_weights[i,pos] = cell_val
+
+    weights = flat_weights.reshape((k,M,N))
+    
+    if k==1:
+        weights = np.squeeze(weights)
+    return weights
+
+def _digitise(mac: np.ndarray, adc_steps: np.ndarray) -> np.ndarray:
+    digital = np.floor((mac + 0.5*adc_steps)/adc_steps).astype(int)
+    # digital = np.rint(mac / self.adc_steps).astype(int)
+    return digital
+
+
 class Simple_Sim(xbar_simulator.CrossbarSimulator):
     """
     A *single-vector* simulator.  One instance lives in one process.
     """
-    def __init__(self, M: int, N: int, Rw: int, transient=False):
-        super().__init__(M, N)
+    def __init__(self, M: int, N: int, bits_per_cell:int, Rw: int, transient=False):
+        super().__init__(M, N,bits_per_cell)
         self.M, self.N, self.Rw, self.transient = M, N, Rw, transient
         self.initialize_jart()
 
@@ -58,46 +137,68 @@ class Simple_Sim(xbar_simulator.CrossbarSimulator):
             mac = mac[0]
         return mem, mac
     
-    def sample_without_replacement(self,n,r,k,seed=None):
-        rng   = np.random.default_rng(seed)
-        possible_set = set()
-        while len(possible_set) < k:
-            combo = tuple(sorted(rng.sample(range(0, n), r)))
-            possible_set.add(combo)
-
-        possible_array = np.array(list(possible_set))
-        return possible_array
-    
-    def random_inputs(self, p: float,samples: int=1, seed=None) -> np.ndarray:
-        r     = int(round((p if p<=1 else p/100) * self.M))
-        rows  = np.zeros((samples, self.M), dtype=bool)
-        active_rows = self.sample_without_replacement(self.M,r,samples,seed)
-        for i in range(samples):
-            rows[i,active_rows[i]] = True
-        if samples==1:
-            rows = np.ravel(rows)
-        return rows
-
-    def random_weights(self, p: float, seed=None) -> np.ndarray:
-        rng  = np.random.default_rng(seed)
-        k    = int(round((p if p<=1 else p/100) * self.M * self.N))
-        flat = np.zeros(self.M * self.N, dtype=bool)
-        flat[rng.choice(flat.size, k, replace=False)] = True
-        return flat.reshape(self.M, self.N)
-
     def mvm(self, x: np.ndarray) -> np.ndarray:
         return (x.astype(int) @ self.weights.astype(int))
+def print_matrix_mult(A, B):
+    """Print [A] * [B] with A vertically, B in middle, and result as column on right"""
+    A = np.asarray(A)
+    B = np.asarray(B)
+    
+    # Compute result
+    result = A @ B
+    
+    # Print each row with result column
+    mid = len(A) // 2
+    result_strs = ''.join(f' {x:d}' for x in result)
+    # print(result_strs)
+    
+    for i in range(len(A)):
+        b_row_str = ' '.join(f'{x:d}' for x in B[i])
+        
+        if i == mid:
+                print(f"[{A[i]:d}]  *  [{b_row_str}] = [{result_strs}]")
+        else:
+                print(f"[{A[i]:d}]     [{b_row_str}]")
+    
+    print()
+
+
 if __name__ == "__main__":
     M, N = 32,32
-    Rw = 1
-    sim = Simple_Sim(M, N, Rw, transient=False)
+    # M, N = 3,3
+    Rw = 0.0001
+    # Rw = 1
+    bits_per_cell = 1
+    transient = False
+    sim = Simple_Sim(M, N,bits_per_cell, Rw, transient=transient)
+    per_input = 0.5
+    per_weight = 0.5
+    num_simulations = 1
+    
+    # weights = np.empty((M,N), dtype=int)
+    # p = 2**bits_per_cell 
+    # for i in range(M):
+    #     weights[i] = np.tile(np.arange(p), N // p)
+    # inputs = np.ones((num_simulations,M), dtype=bool)
 
-    inputs = sim.random_inputs(p=0.5, samples=5, seed=42)
-    weights = sim.random_weights(p=0.5, seed=42)
+    inputs = random_inputs(M,per_input,num_simulations)
+    weights = random_weights(M,N,bits_per_cell,per_weight,1)
+
+    # print(inputs)
+    # print(weights)
+    print_matrix_mult(inputs, weights)
     sim.set_weights(weights)
     mem, mac = sim._solve_(inputs)
-    # print("Mem (µA):", mem)
-    print("MAC (µA):", mac)
+    print("Mem (µA):", mem)
+    # print("MAC (µA):", mac)
 
     mvm = sim.mvm(inputs)
-    print("MVM (digital):", mvm)
+    # print("MVM (digital):", mvm)
+    
+    step = 60/(2**bits_per_cell -1)
+    print(step)
+    # adc_steps = np.full(N,40)
+    adc_steps = np.full(N,step)
+    digital = _digitise(mac, adc_steps)
+    print(mvm-digital)
+    # print(sim.voltage_pulse_height)
