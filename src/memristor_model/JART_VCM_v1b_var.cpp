@@ -597,9 +597,43 @@ double JART_VCM_v1b_var::GetResistance(double V_applied) {
     else { return V_applied / ApplyVoltage(V_applied, 0); }
 }
 
-void JART_VCM_v1b_var::SetWeight(bool weight) {
-    if (weight) { Nreal = Ndiscmax; }
-    else { Nreal = Ndiscmin; }
+void JART_VCM_v1b_var::SetWeight(int weight) {
+
+    if (weight < 0 or weight > std::pow(2,bits_per_cell)-1) {
+        std::cerr << "Error: weight out of bounds in SetWeight" << std::endl;
+        return;
+    }
+
+    switch(bits_per_cell){
+        case 1:
+            switch(weight){
+                case 0:
+                Nreal = Ninit_HRS;
+                case 1:
+                Nreal = Ninit_LRS3;
+                break;
+            }
+            break;
+        case 2:
+            switch(weight){
+                case 0:
+                Nreal = Ninit_HRS;
+                break;
+                case 1:
+                Nreal = Ninit_LRS1;
+                break;
+                case 2:
+                Nreal = Ninit_LRS2;
+                break;
+                case 3:
+                Nreal = Ninit_LRS3;
+                break;
+            }
+            break;
+    }
+
+    // if (weight) { Nreal = Ndiscmax; }
+    // else { Nreal = Ndiscmin; }
     // else { Nreal = Ninit; }
     Treal = T0;
 }
