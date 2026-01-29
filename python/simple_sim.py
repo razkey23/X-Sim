@@ -168,8 +168,9 @@ if __name__ == "__main__":
     # M, N = 3,3
     Rw = 0.0001
     # Rw = 1
-    bits_per_cell = 1
-    transient = False
+    bits_per_cell = 2
+    transient = True
+    # transient = False
     sim = Simple_Sim(M, N,bits_per_cell, Rw, transient=transient)
     per_input = 0.5
     per_weight = 0.5
