@@ -1,8 +1,12 @@
-import xbar_simulator                                          # C++ bindings
+# import xbar_simulator          
+from Fast_Crossbar_Sim.python import xbar_simulator
+# C++ bindings
 # from . import xbar_simulator                                          # C++ bindings
 import numpy as np
 import random
 import math
+import torch
+import itertools
 def sample_without_replacement(n: int, r: int, k: int, seed=None) -> np.ndarray:
     if r > n:
         raise ValueError(f"r={r} cannot be larger than n={n}.")
@@ -74,8 +78,8 @@ def random_weights(M:int,N:int, bits_per_cell: int, p: float,k: int=1, seed=None
         weights = np.squeeze(weights)
     return weights
 
-def _digitise(mac: np.ndarray, adc_steps: np.ndarray) -> np.ndarray:
-    digital = np.floor((mac + 0.5*adc_steps)/adc_steps).astype(int)
+def _digitise(mac: torch.Tensor, adc_steps: torch.Tensor) -> np.ndarray:
+    digital = torch.floor((mac + 0.5*adc_steps)/adc_steps).to(torch.int)
     # digital = np.rint(mac / self.adc_steps).astype(int)
     return digital
 
@@ -92,14 +96,14 @@ class Simple_Sim(xbar_simulator.CrossbarSimulator):
         parasitics = (self.Rw, 1e20, 1e20, self.Rw, self.Rw, self.Rw)
         self.set_parasitic_resistances(*parasitics)
 
-        self.weights: np.ndarray | None = None             # set later
+        self.weights: torch.Tensor | None = None             # set later
     
-    def set_weights(self, w: np.ndarray) -> None:
+    def set_weights(self, w: torch.Tensor) -> None:
         super().set_weights(w)
         self.weights = w
 
 
-    def _solve_one_(self, x: np.ndarray):
+    def _solve_one_(self, x: torch.Tensor):
         """Return MAC (amps) for a single Boolean input row vector."""
         # self.initialize_jart()
         self.set_weights(self.weights)
@@ -111,10 +115,10 @@ class Simple_Sim(xbar_simulator.CrossbarSimulator):
         mac = mac*1e6
         return (mem,mac)         
                                 # 
-    def _solve_(self, x: np.ndarray):
+    def _solve_(self, x: torch.Tensor):
         """Return MAC (amps) for multiple Boolean input row vectors."""
         if x.ndim == 1:
-            xs = x[np.newaxis, :]
+            xs = x.unsqueeze(0)
             squeeze_output = True
         elif x.ndim == 2:
             xs = x
@@ -137,8 +141,8 @@ class Simple_Sim(xbar_simulator.CrossbarSimulator):
             mac = mac[0]
         return mem, mac
     
-    def mvm(self, x: np.ndarray) -> np.ndarray:
-        return (x.astype(int) @ self.weights.astype(int))
+    def mvm(self, x: torch.Tensor) -> torch.Tensor:
+        return (x.to(torch.int) @ self.weights.to(torch.int))
 def print_matrix_mult(A, B):
     """Print [A] * [B] with A vertically, B in middle, and result as column on right"""
     A = np.asarray(A)
@@ -162,6 +166,14 @@ def print_matrix_mult(A, B):
     
     print()
 
+def run_simulation(M,N,bits_per_cell,Rw,x,w,steps,transient=False):
+    sim = Simple_Sim(M, N,bits_per_cell, Rw, transient=transient)
+    sim.set_weights(w)
+    mem, mac = sim._solve_(x)
+    mac = torch.from_numpy(mac)
+    digital = _digitise(mac, steps)
+    # print(digital)
+    return digital
 
 if __name__ == "__main__":
     M, N = 32,32
@@ -170,8 +182,6 @@ if __name__ == "__main__":
     # Rw = 1
     bits_per_cell = 2
     transient = True
-    # transient = False
-    sim = Simple_Sim(M, N,bits_per_cell, Rw, transient=transient)
     per_input = 0.5
     per_weight = 0.5
     num_simulations = 1
@@ -185,21 +195,18 @@ if __name__ == "__main__":
     inputs = random_inputs(M,per_input,num_simulations)
     weights = random_weights(M,N,bits_per_cell,per_weight,1)
 
+
     # print(inputs)
     # print(weights)
-    print_matrix_mult(inputs, weights)
-    sim.set_weights(weights)
-    mem, mac = sim._solve_(inputs)
-    print("Mem (µA):", mem)
-    # print("MAC (µA):", mac)
-
-    mvm = sim.mvm(inputs)
-    # print("MVM (digital):", mvm)
+    mvm = inputs @ weights
+    mvm = torch.from_numpy(mvm)
     
     step = 60/(2**bits_per_cell -1)
     print(step)
     # adc_steps = np.full(N,40)
     adc_steps = np.full(N,step)
-    digital = _digitise(mac, adc_steps)
+    adc_steps = torch.from_numpy(adc_steps)
+    
+    digital = run_simulation(M,N,bits_per_cell,Rw,inputs,weights,adc_steps,transient)
     print(mvm-digital)
     # print(sim.voltage_pulse_height)
