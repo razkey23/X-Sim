@@ -166,15 +166,20 @@ def print_matrix_mult(A, B):
     
     print()
 
-def run_simulation(M,N,bits_per_cell,Rw,x,w,steps,transient=False):
+def run(M,N,bits_per_cell,Rw,x,w,transient=False):
     sim = Simple_Sim(M, N,bits_per_cell, Rw, transient=transient)
     sim.set_weights(w)
     mem, mac = sim._solve_(x)
     mac = torch.from_numpy(mac)
+    return mem,mac
+    
+def run_simulation(M,N,bits_per_cell,Rw,x,w,steps,transient=False):
+    mem, mac = run(M,N,bits_per_cell,Rw,x,w,transient)
     digital = _digitise(mac, steps)
     # print(digital)
     return digital
 
+    
 if __name__ == "__main__":
     M, N = 32,32
     # M, N = 3,3
