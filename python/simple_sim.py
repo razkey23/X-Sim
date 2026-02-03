@@ -212,6 +212,8 @@ if __name__ == "__main__":
     adc_steps = np.full(N,step)
     adc_steps = torch.from_numpy(adc_steps)
     
+    inputs = torch.from_numpy(inputs)
+    weights = torch.from_numpy(weights)
     digital = run_simulation(M,N,bits_per_cell,Rw,inputs,weights,adc_steps,transient)
     print(mvm-digital)
     # print(sim.voltage_pulse_height)
