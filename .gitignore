@@ -37,3 +37,5 @@ python/__pycache__/__init__.cpython-312.pyc
 python/__pycache__/simple_sim.cpython-312.pyc
 python/__pycache__/simple_test.cpython-312.pyc
 __pycache__/__init__.cpython-312.pyc
+__pycache__
+include/eigen-3.4.0.tar.gz
