@@ -2,7 +2,7 @@
 
 #include "core/nonlinear_crossbar_solver.h"
 #include "crossbar_model/linear_crossbar_solver.h"
-
+#include <cassert>
 #include <iostream>
 
 /*void CrossbarSimulator::SetRRAM(std::vector<std::vector<bool>> weights) {
