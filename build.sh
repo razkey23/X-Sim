@@ -11,6 +11,12 @@ if [[ ! -d "${ROOT_DIR}/pybind11" ]]; then
   git clone https://github.com/pybind/pybind11.git "${ROOT_DIR}/pybind11"
 fi
 
+# Remove existing build directory if it exists
+if [[ -d "${BUILD_DIR}" ]]; then
+  echo "[build.sh] Removing existing build directory ${BUILD_DIR}"
+  rm -rf "${BUILD_DIR}"
+fi
+
 # Use a temporary source tree so we can build from CMakeLists_xbar_2d.txt
 # without modifying the repository's top-level CMakeLists.txt.
 TMP_SRC_DIR="$(mktemp -d)"
