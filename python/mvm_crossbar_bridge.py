@@ -104,6 +104,7 @@ def crossbar_mvm_mac(
     memristor: str = "jart",
     method: str = "fixed-point",
     dt: float = xs2.simulation_time_step,
+    return_iout: bool = False
 ) -> np.ndarray:
     """Convenience wrapper that returns only MAC outputs (D, N)."""
     result = crossbar_mvm(
@@ -116,9 +117,12 @@ def crossbar_mvm_mac(
         memristor=memristor,
         method=method,
         dt=dt,
-        return_iout=False,
+        return_iout=return_iout,
     )
-    return result.mac
+    if return_iout:
+        return result.mac, result.iout
+    else:
+        return result.mac
 
 
 def _digitise(mac, adc_steps) -> np.ndarray:
